@@ -1,0 +1,10 @@
+BEGIN{
+	last_pkt_id = -1;
+	last_e2e_delay = -1;
+}
+{
+	pkt_id = $1;
+	send_time = $2;
+	rev_time = $3;
+	
+}

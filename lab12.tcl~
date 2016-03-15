@@ -1,0 +1,135 @@
+if {$argc!=1} {
+	puts "Usage: ns lab12.tcl TCPversion."
+    puts "Example: ns lab12.tcl Reno or ns lab12.tcl Newreno or ns lab12.tcl Sack"
+    exit
+}
+
+set par1 [lindex $argv 0]
+
+#产生一个仿真的对象
+set ns [new Simulator]
+
+#打开一个 trace 文件，用来记录封包传送的过程
+set nd [open out-$par1.tr w]
+$ns trace-all $nd
+
+#打开一个文件用来记录 cwnd 的情况
+set f0 [open cwnd-$par1.tr w]
+
+#定义一个结束的程序
+proc finish { } \
+{
+	global ns nd f0 tcp par1
+    
+    #显示最后的平局吞吐量
+    puts [format "average throughput: %.1f Kbps"\
+        [expr [$tcp set ack_]*([$tcp set packetSize_])*8/1000.0/10]]
+	$ns flush-trace
+
+    #关闭文件
+	close $nd
+    close $f0
+
+	#使用 awk 分析记录文件，以观察队列的变化
+	exec awk {
+		BEGIN{
+			highest_packet_id = -1;
+			packet_count = 0;
+			q_eln = 0;
+		}
+		{
+			action = $1;
+			time = $2;
+			src_node = $3;
+			dst_node = $4;
+			type = $5;
+			flow_id = $8;
+			seq_no = $11;
+			packet_id = $12;
+				if( src_node == "0" && dst_node == "1" )
+				{
+					if( packet_id > highest_packet_id )
+					{
+						highest_packet_id = packet_id;
+					}
+					if( action == "+")
+					{
+						q_len ++;
+						print time, q_len;
+					}
+					if( action == "-" || action == "d")
+					{
+						q_len = q_len --;
+						print time, q_len;
+					}
+				}
+		}
+	} out-$par1.tr > queue_length-$par1.tr
+	exit 0
+}
+
+#定义一个记录的程序
+#每隔 0,01s 记录当时的 cwnd 
+proc record { } \
+{
+	global ns tcp f0
+    
+    set now [$ns now]
+    puts $f0 "$now [$tcp set cwnd_]"
+    $ns at [expr $now+0.01] "record"
+}
+
+#产生传送结点，路由器 r1，r2 和接收结点
+set r0 [$ns node]
+set r1 [$ns node]
+set n0 [$ns node]
+set n1 [$ns node]
+
+#建立链路
+$ns duplex-link $n0 $r0 10Mb 1ms DropTail
+$ns duplex-link $r0 $r1 1M 4ms DropTail
+$ns duplex-link $r1 $n1 10Mb 1ms DropTail
+
+#设置队列长度为 15 个封包大小
+set buffer_size 15
+$ns queue-limit $r0 $r1 $buffer_size
+
+#根据用户的设置，制定 TCP 版本
+if {$par1=="Reno"} {
+	set tcp [new Agent/TCP/Reno]
+	set tcpsink [new Agent/TCPSink]
+	$tcp set debug_ 0
+} elseif {$par1=="Newreno"} {
+	set tcp [new Agent/TCP/Newreno]
+	set tcpsink [new Agent/TCPSink]
+	$tcp set debug_ 0
+} else {
+	set tcp [new Agent/TCP/Sack1]
+	set tcpsink [new Agent/TCPSink/Sack1]
+	$tcp set debug_ 0
+}
+
+$ns attach-agent $n0 $tcp
+#将 awnd 的值设为 24,这是 advertised window 的上限，advertised window 是接受端的缓冲区可以容纳的封包个数，因此当 congestion 
+#window 的值超过 advertised window 时，TCP 的传送端会执行流量控制，以避免传送得太快而导致接受端缓冲区溢满。
+$tcp set window_ 24
+
+$ns attach-agent $n1 $tcpsink
+$ns connect $tcp $tcpsink
+
+#建立 FTP 应用程序
+set ftp [new Application/FTP]
+$ftp attach-agent $tcp
+
+$ns at 0.0 "$ftp start"
+$ns at 10.0 "$ftp stop"
+$ns at 0.0 "record"
+$ns at 10.0 "finish"
+
+#计算在传输路径上大约可以容纳多少个封包。
+#计算方式：在 bottleneck link 上每秒可以传送的封包数 × RTT + 队列缓冲区大小
+puts [format "on path: %.2f packets"\
+		[expr (100000/(8*([$tcp set packetSize_]+40))*((1+4+1)*2*0.001))+$buffer_size]]
+
+$ns run
+

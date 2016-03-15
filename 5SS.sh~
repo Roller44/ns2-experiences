@@ -1,0 +1,8 @@
+#!/usr/bin/
+
+for (( i = 0; i < 5; i++ )); do
+	i+100
+	$f="awk -f avg.awk result(i+100)"
+	$f
+	"awk -v t=$f -f 95ci.awk result(i+100)"
+done
