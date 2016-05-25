@@ -17,7 +17,7 @@ while (<DATA>) {
 		$start=$x[2];
 		$init=1;
 	}
-	
+
 	if ($x[2]-$clock<=$granularity) {
 		$sum=$sum+$x[3];
 		$sum_total=$sum_total+$x[3];
@@ -25,12 +25,12 @@ while (<DATA>) {
 	else
 	{
 		$throughput=$sum*0.8/$granularity;
-		
+
 		if ($throughput>$maxrate) {
 			$maxrate=$throughput;
 		}
     	print STDOUT "$x[2]: $throughput bps\n";
-		
+
 		$clock=$clock+$granularity;
 		$sum_total=$sum_total+$x[3];
 		$sum=$x[3];
